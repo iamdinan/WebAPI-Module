@@ -22,6 +22,22 @@ function toPingDto(ping) {
   };
 }
 
+// Returns the most recent ping for a vehicle, or undefined if none exist.
+// Sorts a copy so the shared db.pings array is never mutated.
+function getLastPing(vehicleId) {
+  const vehiclePings = db.pings.filter((p) => p.vehicle_id === vehicleId);
+
+  if (vehiclePings.length === 0) {
+    return undefined;
+  }
+
+  const sorted = [...vehiclePings].sort(
+    (a, b) => new Date(b.timestamp) - new Date(a.timestamp),
+  );
+
+  return sorted[0];
+}
+
 // GET /vehicles
 router.get("/", (req, res) => {
   res.json(db.vehicles.map(toVehicleDto));
@@ -36,7 +52,12 @@ router.get("/:vehicleId", (req, res) => {
     return res.status(404).json({ error: "Vehicle not found" });
   }
 
-  res.json(toVehicleDto(vehicle));
+  const lastPing = getLastPing(vehicleId);
+
+  res.json({
+    ...toVehicleDto(vehicle),
+    last_ping: lastPing ? toPingDto(lastPing) : null,
+  });
 });
 
 // GET /vehicles/:vehicleId/pings
