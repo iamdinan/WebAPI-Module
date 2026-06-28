@@ -22,6 +22,15 @@ function toPingDto(ping) {
   };
 }
 
+function toLastPositionDto(ping) {
+  return {
+    vehicle_id: ping.vehicle_id,
+    timestamp: ping.timestamp,
+    lat: ping.latitude,
+    lng: ping.longitude,
+  };
+}
+
 // Returns the most recent ping for a vehicle, or undefined if none exist.
 // Sorts a copy so the shared db.pings array is never mutated.
 function getLastPing(vehicleId) {
@@ -71,6 +80,26 @@ router.get("/:vehicleId/pings", (req, res) => {
 
   const pings = db.pings.filter((p) => p.vehicle_id === vehicleId);
   res.json(pings.map(toPingDto));
+});
+
+// GET /vehicles/:vehicleId/last-position
+router.get("/:vehicleId/last-position", (req, res) => {
+  const vehicleId = Number(req.params.vehicleId);
+  const vehicle = db.vehicles.find((v) => v.id === vehicleId);
+
+  if (!vehicle) {
+    return res.status(404).json({ error: "Vehicle not found" });
+  }
+
+  const lastPing = getLastPing(vehicleId);
+
+  if (!lastPing) {
+    return res
+      .status(404)
+      .json({ error: "No position found for this vehicle" });
+  }
+
+  res.json(toLastPositionDto(lastPing));
 });
 
 module.exports = router;
