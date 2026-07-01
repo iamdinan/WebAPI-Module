@@ -16,8 +16,11 @@ app.use("/districts", districtsRouter);
 app.use("/stations", stationsRouter);
 app.use("/vehicles", vehiclesRouter);
 
-app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
-});
+// Only listen when run directly (local dev). Vercel imports the app instead.
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server listening on port ${PORT}`);
+  });
+}
 
 module.exports = app;
