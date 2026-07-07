@@ -3,6 +3,13 @@ const db = require("../data");
 
 const router = express.Router();
 
+const deviceKeys = Object.fromEntries(
+  db.vehicles.map((v) => [
+    "v-" + String(v.id).padStart(2, "0"),
+    "key_v" + String(v.id).padStart(2, "0"),
+  ]),
+);
+
 function toVehicleDto(vehicle) {
   return {
     vehicle_id: vehicle.id,
@@ -80,6 +87,72 @@ router.get("/:vehicleId/pings", (req, res) => {
 
   const pings = db.pings.filter((p) => p.vehicle_id === vehicleId);
   res.json(pings.map(toPingDto));
+});
+
+// POST /vehicles/:vehicleId/pings
+router.post("/:vehicleId/pings", (req, res) => {
+  const apiKey = req.get("X-API-Key");
+
+  if (!apiKey) {
+    return res.status(401).json({ error: "X-API-Key header is required" });
+  }
+
+  const vehicleId = Number(req.params.vehicleId);
+  const vehicle = db.vehicles.find((v) => v.id === vehicleId);
+
+  if (!vehicle) {
+    return res.status(404).json({ error: "Vehicle not found" });
+  }
+
+  const key = "v-" + String(vehicleId).padStart(2, "0");
+
+  if (deviceKeys[key] !== apiKey) {
+    return res.status(403).json({ error: "Invalid API key" });
+  }
+
+  const { latitude, longitude, speed } = req.body;
+
+  if (latitude == null || longitude == null || speed == null) {
+    return res
+      .status(400)
+      .json({ error: "latitude, longitude, and speed are required" });
+  }
+
+  const id = db.pings.length + 1;
+  const timestamp = new Date().toISOString();
+
+  const newPing = { id, vehicle_id: vehicleId, latitude, longitude, speed, timestamp };
+  db.pings.push(newPing);
+
+  const location = `/vehicles/${vehicleId}/pings/${id}`;
+  const lastModified = new Date(timestamp).toUTCString();
+  const etag = `"${id}-${timestamp}"`;
+
+  res
+    .status(201)
+    .location(location)
+    .set("ETag", etag)
+    .set("Last-Modified", lastModified)
+    .json(toPingDto(newPing));
+});
+
+// GET /vehicles/:vehicleId/pings/:pingId
+router.get("/:vehicleId/pings/:pingId", (req, res) => {
+  const vehicleId = Number(req.params.vehicleId);
+  const pingId = Number(req.params.pingId);
+  const vehicle = db.vehicles.find((v) => v.id === vehicleId);
+
+  if (!vehicle) {
+    return res.status(404).json({ error: "Vehicle not found" });
+  }
+
+  const ping = db.pings.find((p) => p.id === pingId && p.vehicle_id === vehicleId);
+
+  if (!ping) {
+    return res.status(404).json({ error: "Ping not found" });
+  }
+
+  res.json(toPingDto(ping));
 });
 
 // GET /vehicles/:vehicleId/last-position
