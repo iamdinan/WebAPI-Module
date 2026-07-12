@@ -1,14 +1,9 @@
 const express = require("express");
 const db = require("../data");
+const basicAuth = require("../middleware/basicAuth");
+const { validateApiKey } = require("../middleware/deviceApiKey");
 
 const router = express.Router();
-
-const deviceKeys = Object.fromEntries(
-  db.vehicles.map((v) => [
-    "v-" + String(v.id).padStart(2, "0"),
-    "key_v" + String(v.id).padStart(2, "0"),
-  ]),
-);
 
 function toVehicleDto(vehicle) {
   return {
@@ -54,6 +49,13 @@ function getLastPing(vehicleId) {
   return sorted[0];
 }
 
+router.use((req, res, next) => {
+  if (req.method === "GET") {
+    return basicAuth(req, res, next);
+  }
+  next();
+});
+
 // GET /vehicles
 router.get("/", (req, res) => {
   res.json(db.vehicles.map(toVehicleDto));
@@ -90,26 +92,8 @@ router.get("/:vehicleId/pings", (req, res) => {
 });
 
 // POST /vehicles/:vehicleId/pings
-router.post("/:vehicleId/pings", (req, res) => {
-  const apiKey = req.get("X-API-Key");
-
-  if (!apiKey) {
-    return res.status(401).json({ error: "X-API-Key header is required" });
-  }
-
+router.post("/:vehicleId/pings", validateApiKey, (req, res) => {
   const vehicleId = Number(req.params.vehicleId);
-  const vehicle = db.vehicles.find((v) => v.id === vehicleId);
-
-  if (!vehicle) {
-    return res.status(404).json({ error: "Vehicle not found" });
-  }
-
-  const key = "v-" + String(vehicleId).padStart(2, "0");
-
-  if (deviceKeys[key] !== apiKey) {
-    return res.status(403).json({ error: "Invalid API key" });
-  }
-
   const { latitude, longitude, speed } = req.body;
 
   if (latitude == null || longitude == null || speed == null) {
