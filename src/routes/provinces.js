@@ -1,5 +1,5 @@
 const express = require("express");
-const db = require("../data");
+const { connect } = require("../data");
 
 const router = express.Router();
 
@@ -10,15 +10,16 @@ function toProvinceDto(province) {
   };
 }
 
-// GET /provinces
-router.get("/", (req, res) => {
-  res.json(db.provinces.map(toProvinceDto));
+router.get("/", async (req, res) => {
+  const db = await connect();
+  const provinces = await db.collection("provinces").find().toArray();
+  res.json(provinces.map(toProvinceDto));
 });
 
-// GET /provinces/:provinceId
-router.get("/:provinceId", (req, res) => {
+router.get("/:provinceId", async (req, res) => {
+  const db = await connect();
   const provinceId = Number(req.params.provinceId);
-  const province = db.provinces.find((p) => p.id === provinceId);
+  const province = await db.collection("provinces").findOne({ id: provinceId });
 
   if (!province) {
     return res.status(404).json({ error: "Province not found" });

@@ -1,29 +1,33 @@
-const fs = require("fs");
+const { MongoClient } = require("mongodb");
 const path = require("path");
+const fs = require("fs");
 
-const seedPath = path.join(__dirname, "seed.json");
+require("dotenv").config();
 
-let raw;
-try {
-  raw = fs.readFileSync(seedPath, "utf-8");
-} catch (err) {
-  throw new Error(`Could not read seed.json at ${seedPath}: ${err.message}`);
+const client = new MongoClient(process.env.MONGO_URI);
+let _db;
+
+async function connect() {
+  if (_db) return _db;
+  await client.connect();
+  _db = client.db();
+  await seedIfEmpty();
+  return _db;
 }
 
-let parsed;
-try {
-  parsed = JSON.parse(raw);
-} catch (err) {
-  throw new Error(`seed.json contains invalid JSON: ${err.message}`);
+async function seedIfEmpty() {
+  const collections = ["provinces", "districts", "stations", "vehicles", "pings"];
+  for (const name of collections) {
+    const count = await _db.collection(name).countDocuments();
+    if (count > 0) continue;
+    const seedPath = path.join(__dirname, "seed.json");
+    const raw = fs.readFileSync(seedPath, "utf-8");
+    const parsed = JSON.parse(raw);
+    const docs = parsed[name];
+    if (docs && docs.length > 0) {
+      await _db.collection(name).insertMany(docs);
+    }
+  }
 }
 
-// In-memory collections, loaded once at process startup.
-const db = {
-  provinces: parsed.provinces || [],
-  districts: parsed.districts || [],
-  stations: parsed.stations || [],
-  vehicles: parsed.vehicles || [],
-  pings: parsed.pings || [],
-};
-
-module.exports = db;
+module.exports = { connect, client };

@@ -1,5 +1,5 @@
 const express = require("express");
-const db = require("../data");
+const { connect } = require("../data");
 const basicAuth = require("../middleware/basicAuth");
 const { validateApiKey } = require("../middleware/deviceApiKey");
 
@@ -33,20 +33,15 @@ function toLastPositionDto(ping) {
   };
 }
 
-// Returns the most recent ping for a vehicle, or undefined if none exist.
-// Sorts a copy so the shared db.pings array is never mutated.
-function getLastPing(vehicleId) {
-  const vehiclePings = db.pings.filter((p) => p.vehicle_id === vehicleId);
-
-  if (vehiclePings.length === 0) {
-    return undefined;
-  }
-
-  const sorted = [...vehiclePings].sort(
-    (a, b) => new Date(b.timestamp) - new Date(a.timestamp),
-  );
-
-  return sorted[0];
+async function getLastPing(vehicleId) {
+  const db = await connect();
+  const pings = await db
+    .collection("pings")
+    .find({ vehicle_id: vehicleId })
+    .sort({ timestamp: -1 })
+    .limit(1)
+    .toArray();
+  return pings[0];
 }
 
 router.use((req, res, next) => {
@@ -56,21 +51,22 @@ router.use((req, res, next) => {
   next();
 });
 
-// GET /vehicles
-router.get("/", (req, res) => {
-  res.json(db.vehicles.map(toVehicleDto));
+router.get("/", async (req, res) => {
+  const db = await connect();
+  const vehicles = await db.collection("vehicles").find().toArray();
+  res.json(vehicles.map(toVehicleDto));
 });
 
-// GET /vehicles/:vehicleId
-router.get("/:vehicleId", (req, res) => {
+router.get("/:vehicleId", async (req, res) => {
+  const db = await connect();
   const vehicleId = Number(req.params.vehicleId);
-  const vehicle = db.vehicles.find((v) => v.id === vehicleId);
+  const vehicle = await db.collection("vehicles").findOne({ id: vehicleId });
 
   if (!vehicle) {
     return res.status(404).json({ error: "Vehicle not found" });
   }
 
-  const lastPing = getLastPing(vehicleId);
+  const lastPing = await getLastPing(vehicleId);
 
   res.json({
     ...toVehicleDto(vehicle),
@@ -78,35 +74,44 @@ router.get("/:vehicleId", (req, res) => {
   });
 });
 
-// GET /vehicles/:vehicleId/pings
-router.get("/:vehicleId/pings", (req, res) => {
+router.get("/:vehicleId/pings", async (req, res) => {
+  const db = await connect();
   const vehicleId = Number(req.params.vehicleId);
-  const vehicle = db.vehicles.find((v) => v.id === vehicleId);
+  const vehicle = await db.collection("vehicles").findOne({ id: vehicleId });
 
   if (!vehicle) {
     return res.status(404).json({ error: "Vehicle not found" });
   }
 
-  const pings = db.pings.filter((p) => p.vehicle_id === vehicleId);
+  const pings = await db
+    .collection("pings")
+    .find({ vehicle_id: vehicleId })
+    .toArray();
   res.json(pings.map(toPingDto));
 });
 
-// POST /vehicles/:vehicleId/pings
-router.post("/:vehicleId/pings", validateApiKey, (req, res) => {
+router.post("/:vehicleId/pings", validateApiKey, async (req, res) => {
+  const db = await connect();
   const vehicleId = Number(req.params.vehicleId);
-  const { latitude, longitude, speed } = req.body;
+  const { latitude, longitude } = req.body;
 
-  if (latitude == null || longitude == null || speed == null) {
+  if (latitude == null || longitude == null) {
     return res
       .status(400)
-      .json({ error: "latitude, longitude, and speed are required" });
+      .json({ error: "latitude and longitude are required" });
   }
 
-  const id = db.pings.length + 1;
+  const maxPing = await db
+    .collection("pings")
+    .find()
+    .sort({ id: -1 })
+    .limit(1)
+    .toArray();
+  const id = maxPing.length > 0 ? maxPing[0].id + 1 : 1;
   const timestamp = new Date().toISOString();
 
-  const newPing = { id, vehicle_id: vehicleId, latitude, longitude, speed, timestamp };
-  db.pings.push(newPing);
+  const newPing = { id, vehicle_id: vehicleId, latitude, longitude, timestamp };
+  await db.collection("pings").insertOne(newPing);
 
   const location = `/vehicles/${vehicleId}/pings/${id}`;
   const lastModified = new Date(timestamp).toUTCString();
@@ -120,17 +125,19 @@ router.post("/:vehicleId/pings", validateApiKey, (req, res) => {
     .json(toPingDto(newPing));
 });
 
-// GET /vehicles/:vehicleId/pings/:pingId
-router.get("/:vehicleId/pings/:pingId", (req, res) => {
+router.get("/:vehicleId/pings/:pingId", async (req, res) => {
+  const db = await connect();
   const vehicleId = Number(req.params.vehicleId);
   const pingId = Number(req.params.pingId);
-  const vehicle = db.vehicles.find((v) => v.id === vehicleId);
+  const vehicle = await db.collection("vehicles").findOne({ id: vehicleId });
 
   if (!vehicle) {
     return res.status(404).json({ error: "Vehicle not found" });
   }
 
-  const ping = db.pings.find((p) => p.id === pingId && p.vehicle_id === vehicleId);
+  const ping = await db
+    .collection("pings")
+    .findOne({ id: pingId, vehicle_id: vehicleId });
 
   if (!ping) {
     return res.status(404).json({ error: "Ping not found" });
@@ -139,16 +146,16 @@ router.get("/:vehicleId/pings/:pingId", (req, res) => {
   res.json(toPingDto(ping));
 });
 
-// GET /vehicles/:vehicleId/last-position
-router.get("/:vehicleId/last-position", (req, res) => {
+router.get("/:vehicleId/last-position", async (req, res) => {
+  const db = await connect();
   const vehicleId = Number(req.params.vehicleId);
-  const vehicle = db.vehicles.find((v) => v.id === vehicleId);
+  const vehicle = await db.collection("vehicles").findOne({ id: vehicleId });
 
   if (!vehicle) {
     return res.status(404).json({ error: "Vehicle not found" });
   }
 
-  const lastPing = getLastPing(vehicleId);
+  const lastPing = await getLastPing(vehicleId);
 
   if (!lastPing) {
     return res
