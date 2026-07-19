@@ -93,12 +93,12 @@ router.get("/:vehicleId/pings", async (req, res) => {
 router.post("/:vehicleId/pings", validateApiKey, async (req, res) => {
   const db = await connect();
   const vehicleId = Number(req.params.vehicleId);
-  const { latitude, longitude, speed } = req.body;
+  const { latitude, longitude } = req.body;
 
-  if (latitude == null || longitude == null || speed == null) {
+  if (latitude == null || longitude == null) {
     return res
       .status(400)
-      .json({ error: "latitude, longitude, and speed are required" });
+      .json({ error: "latitude and longitude are required" });
   }
 
   const maxPing = await db
@@ -110,7 +110,7 @@ router.post("/:vehicleId/pings", validateApiKey, async (req, res) => {
   const id = maxPing.length > 0 ? maxPing[0].id + 1 : 1;
   const timestamp = new Date().toISOString();
 
-  const newPing = { id, vehicle_id: vehicleId, latitude, longitude, speed, timestamp };
+  const newPing = { id, vehicle_id: vehicleId, latitude, longitude, timestamp };
   await db.collection("pings").insertOne(newPing);
 
   const location = `/vehicles/${vehicleId}/pings/${id}`;
