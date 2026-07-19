@@ -42,7 +42,7 @@ Exports `{ connect, client }`.
 
 - `connect()` — returns a cached MongoDB `Db` instance.
 - On first connect, auto-seeds all 5 collections (`provinces`, `districts`, `stations`, `vehicles`, `pings`) from `seed.json` if they are empty.
-- URI: `MONGO_URI` from `.env` → `mongodb+srv://admin:abc123456@cluster0.bcjcagw.mongodb.net/tuk-tuk-db`
+- URI: `MONGO_URI` from `.env` (see `.env.sample` for the format).
 - All documents use **numeric `id` fields** (not ObjectId).
 
 ## Middleware
