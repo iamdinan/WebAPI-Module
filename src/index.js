@@ -1,7 +1,5 @@
 const express = require("express");
-
-// Loading this module reads and parses seed.json once at startup.
-require("./data");
+const { connect } = require("./data");
 
 const provincesRouter = require("./routes/provinces");
 const districtsRouter = require("./routes/districts");
@@ -21,11 +19,17 @@ app.use("/districts", districtsRouter);
 app.use("/stations", stationsRouter);
 app.use("/vehicles", vehiclesRouter);
 
-// Only listen when run directly (local dev). Vercel imports the app instead.
 if (require.main === module) {
-  app.listen(PORT, () => {
-    console.log(`Server listening on port ${PORT}`);
-  });
+  connect()
+    .then(() => {
+      app.listen(PORT, () => {
+        console.log(`Server listening on port ${PORT}`);
+      });
+    })
+    .catch((err) => {
+      console.error("Failed to connect to MongoDB:", err);
+      process.exit(1);
+    });
 }
 
 module.exports = app;

@@ -1,5 +1,5 @@
 const express = require("express");
-const db = require("../data");
+const { connect } = require("../data");
 
 const router = express.Router();
 
@@ -11,15 +11,16 @@ function toDistrictDto(district) {
   };
 }
 
-// GET /districts
-router.get("/", (req, res) => {
-  res.json(db.districts.map(toDistrictDto));
+router.get("/", async (req, res) => {
+  const db = await connect();
+  const districts = await db.collection("districts").find().toArray();
+  res.json(districts.map(toDistrictDto));
 });
 
-// GET /districts/:districtId
-router.get("/:districtId", (req, res) => {
+router.get("/:districtId", async (req, res) => {
+  const db = await connect();
   const districtId = Number(req.params.districtId);
-  const district = db.districts.find((d) => d.id === districtId);
+  const district = await db.collection("districts").findOne({ id: districtId });
 
   if (!district) {
     return res.status(404).json({ error: "District not found" });

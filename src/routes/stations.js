@@ -1,5 +1,5 @@
 const express = require("express");
-const db = require("../data");
+const { connect } = require("../data");
 
 const router = express.Router();
 
@@ -11,15 +11,16 @@ function toStationDto(station) {
   };
 }
 
-// GET /stations
-router.get("/", (req, res) => {
-  res.json(db.stations.map(toStationDto));
+router.get("/", async (req, res) => {
+  const db = await connect();
+  const stations = await db.collection("stations").find().toArray();
+  res.json(stations.map(toStationDto));
 });
 
-// GET /stations/:stationId
-router.get("/:stationId", (req, res) => {
+router.get("/:stationId", async (req, res) => {
+  const db = await connect();
   const stationId = Number(req.params.stationId);
-  const station = db.stations.find((s) => s.id === stationId);
+  const station = await db.collection("stations").findOne({ id: stationId });
 
   if (!station) {
     return res.status(404).json({ error: "Station not found" });
