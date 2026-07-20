@@ -1,6 +1,5 @@
 const express = require("express");
 const { connect } = require("../data");
-const basicAuth = require("../middleware/basicAuth");
 const { validateApiKey } = require("../middleware/deviceApiKey");
 
 const router = express.Router();
@@ -43,13 +42,6 @@ async function getLastPing(vehicleId) {
     .toArray();
   return pings[0];
 }
-
-router.use((req, res, next) => {
-  if (req.method === "GET") {
-    return basicAuth(req, res, next);
-  }
-  next();
-});
 
 router.get("/", async (req, res) => {
   const db = await connect();
