@@ -1,10 +1,12 @@
 const express = require("express");
 const { connect } = require("./data");
 
+const jwtAuth = require("./middleware/jwtAuth");
 const provincesRouter = require("./routes/provinces");
 const districtsRouter = require("./routes/districts");
 const stationsRouter = require("./routes/stations");
 const vehiclesRouter = require("./routes/vehicles");
+const authRouter = require("./routes/auth");
 
 const app = express();
 app.use(express.json());
@@ -14,10 +16,11 @@ app.get("/", (req, res) => {
   res.json({ status: "ok", message: "API is running" });
 });
 
-app.use("/provinces", provincesRouter);
-app.use("/districts", districtsRouter);
-app.use("/stations", stationsRouter);
-app.use("/vehicles", vehiclesRouter);
+app.use("/auth", authRouter);
+app.use("/provinces", jwtAuth, provincesRouter);
+app.use("/districts", jwtAuth, districtsRouter);
+app.use("/stations", jwtAuth, stationsRouter);
+app.use("/vehicles", jwtAuth, vehiclesRouter);
 
 if (require.main === module) {
   connect()

@@ -16,20 +16,24 @@ Exposes REST endpoints for provinces, districts, stations, and vehicles (with GP
 
 ```
 .
-├── .env                         # MONGO_URI + PORT
+├── .env                         # MONGO_URI + PORT (gitignored)
+├── .env.sample                  # Env template with placeholders
 ├── package.json
 ├── vercel.json                  # Vercel serverless deployment config
 ├── MEMORY.md
+├── decisions.md                 # Technical decisions & rejected alternatives
 ├── api/                         # Vercel serverless entry point
 │   └── index.js
 └── src/
     ├── index.js                 # Express app setup & startup
     ├── data.js                  # MongoDB connection + auto-seed logic
-    ├── seed.json                # Static seed data (read once at startup)
+    ├── users.json               # Static user accounts for auth
     ├── middleware/
-    │   ├── basicAuth.js         # Basic Auth (police / nibm2024)
-    │   └── deviceApiKey.js      # X-API-Key device validation
+    │   ├── basicAuth.js         # Basic Auth — unused (replaced by JWT)
+    │   ├── deviceApiKey.js      # X-API-Key device validation
+    │   └── jwtAuth.js           # JWT verification middleware
     └── routes/
+        ├── auth.js              # POST /auth/sign-in
         ├── provinces.js         # GET /provinces, GET /provinces/:id
         ├── districts.js         # GET /districts, GET /districts/:id
         ├── stations.js          # GET /stations, GET /stations/:id
@@ -41,17 +45,25 @@ Exposes REST endpoints for provinces, districts, stations, and vehicles (with GP
 Exports `{ connect, client }`.
 
 - `connect()` — returns a cached MongoDB `Db` instance.
-- On first connect, auto-seeds all 5 collections (`provinces`, `districts`, `stations`, `vehicles`, `pings`) from `seed.json` if they are empty.
+- On first connect, auto-seeds all 5 collections (`provinces`, `districts`, `stations`, `vehicles`, `pings`) from `seed.json` if they are empty. **Note:** `seed.json` is currently missing from disk; the database is already seeded from earlier runs. If the DB is dropped, `seed.json` must be restored or the seeding logic updated.
 - URI: `MONGO_URI` from `.env` (see `.env.sample` for the format).
 - All documents use **numeric `id` fields** (not ObjectId).
 
 ## Middleware
 
+### `jwtAuth.js`
+- **Scope:** App-level middleware on all `/provinces`, `/districts`, `/stations`, `/vehicles` routes (applied in `index.js`).
+- Expects `Authorization: Bearer <token>` header.
+- Verifies token with `JWT_SECRET` (env or fallback `"tuk-tuk-secret-key"`).
+- Attaches decoded payload to `req.user`.
+- **401** — header absent, malformed, or token invalid/expired.
+
 ### `basicAuth.js`
-- **Scope:** Applied only to `GET` routes on the vehicles router (via `router.use` + method check).
+- **Status:** Unused (replaced by JWT auth).
+- Previously applied to `GET` routes on the vehicles router.
 - **Credentials:** `username: "police"`, `password: "nibm2024"`
-- **401** (with `WWW-Authenticate: Basic realm="Police API"`) — if `Authorization` header is absent, malformed, or Base64 decoding fails.
-- **403** (no `WWW-Authenticate`) — if decoded username/password do not match.
+- **401** (with `WWW-Authenticate: Basic realm="Police API"`) — if header absent/malformed.
+- **403** — if credentials don't match.
 
 ### `deviceApiKey.js`
 - **Exports:** `{ validateApiKey }`
@@ -82,14 +94,19 @@ Exports `{ connect, client }`.
 | GET | `/stations` | Array of `{ station_id, name, district_id }` |
 | GET | `/stations/:stationId` | Single station DTO or 404 |
 
-### `/vehicles` (all GET routes protected by Basic Auth)
+### `/auth`
 | Method | Path | Auth | Response |
 |--------|------|------|----------|
-| GET | `/vehicles` | Basic | Array of `{ vehicle_id, reg_number, device_id, station_id }` |
-| GET | `/vehicles/:vehicleId` | Basic | Vehicle DTO + `last_ping` (null if none) |
-| GET | `/vehicles/:vehicleId/pings` | Basic | Array of ping DTOs for that vehicle |
-| GET | `/vehicles/:vehicleId/pings/:pingId` | Basic | Single ping DTO or 404 |
-| GET | `/vehicles/:vehicleId/last-position` | Basic | `{ vehicle_id, timestamp, lat, lng }` or 404 |
+| POST | `/auth/sign-in` | None | `{ token, user }` — validates against `users.json` |
+
+### `/vehicles` (all routes protected by JWT)
+| Method | Path | Extra Auth | Response |
+|--------|------|------------|----------|
+| GET | `/vehicles` | — | Array of `{ vehicle_id, reg_number, device_id, station_id }` |
+| GET | `/vehicles/:vehicleId` | — | Vehicle DTO + `last_ping` (null if none) |
+| GET | `/vehicles/:vehicleId/pings` | — | Array of ping DTOs for that vehicle |
+| GET | `/vehicles/:vehicleId/pings/:pingId` | — | Single ping DTO or 404 |
+| GET | `/vehicles/:vehicleId/last-position` | — | `{ vehicle_id, timestamp, lat, lng }` or 404 |
 | POST | `/vehicles/:vehicleId/pings` | X-API-Key | Creates a ping, returns 201 with Location/ETag/Last-Modified |
 
 ## Changes Log (chronological)
@@ -101,7 +118,7 @@ Exports `{ connect, client }`.
 ### 2. `POST /vehicles/:vehicleId/pings`
 - Builds `deviceKeys` map: `"v-{padId}" → "key_v{padId}"`.
 - Validates `X-API-Key` header (401/403/404).
-- Validates request body requires `latitude`, `longitude`, `speed` (400).
+- Validates request body requires `latitude`, `longitude` (400). `speed` was originally required but later removed.
 - Server sets `timestamp: new Date().toISOString()`.
 - ID auto-increments from max existing ping `id`.
 - Returns **201** with `Location`, `ETag`, `Last-Modified` headers.
@@ -127,6 +144,15 @@ Exports `{ connect, client }`.
   - `.push()` → `.insertOne()`
   - `.length + 1` → `find().sort({ id: -1 }).limit(1)` then increment.
 - Added `mongodb` package to dependencies.
+
+### 6. JWT authentication
+- Added `jsonwebtoken` package.
+- Created `src/middleware/jwtAuth.js` — verifies `Bearer` tokens, returns 401 on failure.
+- Created `src/routes/auth.js` with `POST /auth/sign-in` (reads from `users.json`). (A `POST /auth/login` with hardcoded check was added and later removed.)
+- Created `src/users.json` with 3 accounts: `police`/`nibm2024`, `admin`/`admin123`, `dispatcher`/`dispatch123`.
+- Applied `jwtAuth` middleware in `index.js` to all API routers (`/provinces`, `/districts`, `/stations`, `/vehicles`).
+- Removed `basicAuth` usage from `vehicles.js` (file kept on disk).
+- `POST /vehicles/:vehicleId/pings` now requires both JWT (app-level) and X-API-Key (route-level).
 
 ## Running
 
